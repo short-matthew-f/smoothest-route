@@ -180,6 +180,7 @@ export function parseRouteResponse(json) {
       if (!sp || !isNum(sp.duration) || !isNum(sp.length)) {
         throw new HereSchemaError(`${where} span ${i} lacks numeric duration/length`);
       }
+      if (sp.duration <= 0) return; // zero-duration spans carry no time weight; scoreRoute rejects them
       const dyn = sp.dynamicSpeedInfo;
       spans.push({
         t: sp.duration,

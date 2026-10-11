@@ -29,7 +29,13 @@
     (function () {
       try {
         var q = location.search;
-        if (!('serviceWorker' in navigator) || /(^|[?&])(demo|nosw)=1(&|$)/.test(q)) return;
+        if (!('serviceWorker' in navigator)) return;
+        if (/(^|[?&])(demo|nosw)=1(&|$)/.test(q)) {
+          navigator.serviceWorker.getRegistrations()
+            .then(function (rs) { rs.forEach(function (r) { r.unregister(); }); })
+            .catch(function () {});
+          return;
+        }
         window.addEventListener('load', function () {
           navigator.serviceWorker.register('sw.js').catch(function (e) { console.warn('SW registration failed', e); });
         });

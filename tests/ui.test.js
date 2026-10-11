@@ -27,6 +27,17 @@ test('formatters', () => {
   assert.ok(Math.abs(msToMph(26.8224) - 60) < 0.01);
 });
 
+test('delta label: fastest only when delta <= 0', () => {
+  const card = (d) => renderRouteCard(route({ etaDeltaSec: d }));
+  assert.match(card(0), /fastest ETA/);
+  assert.match(card(-5), /fastest ETA/);
+  assert.match(card(10), /\+&lt;1 min vs fastest/);
+  assert.equal(card(10).includes('fastest ETA'), false);
+  assert.match(card(29), /\+&lt;1 min/);
+  assert.match(card(30), /\+1 min vs fastest/);
+  assert.match(card(120), /\+2 min vs fastest/);
+});
+
 test('strip chart: one rect per segment, proportional widths, band fills', () => {
   const svg = renderStripChart(segs);
   assert.match(svg, /^<svg/);

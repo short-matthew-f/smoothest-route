@@ -211,6 +211,34 @@ test('parseRouteResponse yields nulls for absent speeds', () => {
   assert.deepEqual(r.spans, [{ t: 30, len: 1000, v: null, L: null, base: null, offset: 0 }]);
 });
 
+test('parseRouteResponse drops zero-duration spans but keeps summary totals', () => {
+  const json = {
+    routes: [
+      {
+        sections: [
+          {
+            polyline: encodeFlex([
+              [41.0, -73.0],
+              [41.01, -73.0],
+              [41.02, -73.0],
+            ]),
+            summary: { duration: 30, length: 2000 },
+            spans: [
+              { offset: 0, length: 1000, duration: 30 },
+              { offset: 1, length: 1000, duration: 0 },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  const r = parseRouteResponse(json);
+  assert.equal(r.spans.length, 1);
+  assert.equal(r.spans[0].t, 30);
+  assert.equal(r.etaSec, 30);
+  assert.equal(r.lengthM, 2000);
+});
+
 test('parseRouteResponse concatenates sections and rebases offsets', () => {
   const sec = (pts, spans) => ({
     polyline: encodeFlex(pts),

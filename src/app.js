@@ -23,6 +23,7 @@ const state = {
   history: [],
   draft: null, // unsaved settings while editing the form
   mapsUrlFor: null,
+  gen: 0, // bumped on direction change / settings save to discard in-flight refresh results
 };
 
 // ---------- helpers ----------
@@ -49,8 +50,10 @@ function toast(msg) {
 
 function errorMessage(e) {
   if (e instanceof HereSchemaError) return 'HERE response did not match expected schema (fields may have changed)';
-  if (e instanceof HereApiError) return `HTTP ${e.status}: ${e.message}`;
-  if (e instanceof TypeError) return 'Network/CORS error — see docs';
+  if (e instanceof HereApiError) return e.message;
+  if (e instanceof TypeError && /fetch|network|Failed to fetch|NetworkError|Load failed/i.test(e.message)) {
+    return 'Could not reach HERE (network or CORS blocked). See docs/research.md in the repo.';
+  }
   return e?.message || 'Unknown error';
 }
 
@@ -74,9 +77,10 @@ async function fetchDemo(c, corridorIndex) {
 async function refresh() {
   if (state.loading) return;
   if (!DEMO && !state.settings.apiKey) { location.hash = '#/settings'; return; }
+  const gen = ++state.gen;
   state.loading = true;
   state.expandedId = null;
-  render();
+  renderIfRanking();
   const direction = state.direction;
   const { origin, destination } = endpoints();
   const cands = candidates();
@@ -90,6 +94,7 @@ async function refresh() {
     });
   });
   const settled = await Promise.allSettled(jobs);
+  if (gen !== state.gen) { state.loading = false; renderIfRanking(); return; }
   const results = settled.map((s, i) => {
     const c = cands[i];
     const base = { corridorId: c.corridorId, name: c.name, isFastest: c.isFastest };
@@ -111,15 +116,15 @@ async function refresh() {
   }
   state.lastChecked = new Date();
   state.loading = false;
+  renderIfRanking();
   if (!DEMO) {
     const ts = Date.now();
     const records = results.filter((r) => r.score && r.score.badge != null).map((r) => ({
       ts, direction, corridorId: r.corridorId, name: r.name, S: r.score.S, badge: r.score.badge,
       etaSec: r.etaSec, slowShare: r.score.slowShare, coverage: r.score.coverage,
     }));
-    try { if (records.length) await appendHistory(records); } catch (e) { console.warn('history append failed', e); }
+    if (records.length) appendHistory(records).catch(console.warn);
   }
-  render();
 }
 
 // ---------- settings form ----------
@@ -158,6 +163,8 @@ function validate(s) {
 // ---------- routing / render ----------
 const routePath = () => (location.hash.replace(/^#/, '') || '/');
 
+function renderIfRanking() { if (routePath() === '/') render(); }
+
 function render() {
   const path = routePath();
   for (const a of document.querySelectorAll('.nav a')) {
@@ -193,7 +200,7 @@ viewEl.addEventListener('click', async (e) => {
       state.expandedId = state.expandedId === el.dataset.id ? null : el.dataset.id;
       return render();
     case 'set-direction':
-      if (state.direction !== el.dataset.dir) { state.direction = el.dataset.dir; state.results = null; state.expandedId = null; state.lastChecked = null; }
+      if (state.direction !== el.dataset.dir) { state.direction = el.dataset.dir; state.gen++; state.results = null; state.expandedId = null; state.lastChecked = null; }
       return render();
     case 'refresh': return refresh();
     case 'toggle-key': {
@@ -240,6 +247,7 @@ viewEl.addEventListener('submit', async (e) => {
     state.settings = next;
     state.draft = null;
     state.results = null;
+    state.gen++;
     render();
     toast('Saved');
   } catch (ex) {
@@ -248,6 +256,8 @@ viewEl.addEventListener('submit', async (e) => {
 });
 
 window.addEventListener('hashchange', onRoute);
+
+navigator.storage?.persist?.().catch(() => {});
 
 (async function init() {
   try { state.settings = await loadSettings(); } catch (e) { console.warn('loadSettings failed', e); }

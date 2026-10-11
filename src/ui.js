@@ -28,8 +28,9 @@ export function fmtTime(d) {
 }
 function fmtDelta(sec) {
   if (!isNum(sec)) return '';
-  const m = Math.round(sec / 60);
-  return m <= 0 ? 'fastest ETA' : `+${m} min vs fastest`;
+  if (sec <= 0) return 'fastest ETA';
+  if (sec < 30) return '+<1 min vs fastest';
+  return `+${Math.round(sec / 60)} min vs fastest`;
 }
 
 export function bandOfBadge(badge) {

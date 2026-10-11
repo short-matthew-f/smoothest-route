@@ -1,5 +1,5 @@
 // App-shell service worker. Relative paths: app is served from a GitHub Pages subpath.
-const CACHE = 'smoothest-route-v1';
+const CACHE = 'smoothest-route-v2';
 const SHELL = [
   './',
   './index.html',
@@ -42,9 +42,36 @@ self.addEventListener('fetch', (event) => {
   // HERE API: network only, never cached. Not intercepted at all.
   if (url.hostname === 'router.hereapi.com' || url.hostname.endsWith('.hereapi.com')) return;
 
-  // Same-origin only: cache-first with background revalidate.
+  // Same-origin only.
   if (url.origin !== self.location.origin) return;
 
+  // Network-first (cache fallback) for the HTML shell and JS so a deploy is picked up on next load.
+  const path = url.pathname;
+  const networkFirst = req.mode === 'navigate' || path.endsWith('/') || path.endsWith('/index.html') ||
+    (/\/src\/[^/]+\.js$/.test(path));
+  if (networkFirst) {
+    event.respondWith(
+      caches.open(CACHE).then(async (cache) => {
+        const key = req.mode === 'navigate' || path.endsWith('/') ? './index.html' : req;
+        try {
+          const res = await fetch(req);
+          if (res && res.ok && res.type === 'basic') cache.put(key, res.clone()).catch(() => {});
+          return res;
+        } catch (e) {
+          const cached = await cache.match(key, { ignoreSearch: true });
+          if (cached) return cached;
+          if (req.mode === 'navigate') {
+            const shell = await cache.match('./');
+            if (shell) return shell;
+          }
+          return new Response('Offline', { status: 503, statusText: 'Offline' });
+        }
+      })
+    );
+    return;
+  }
+
+  // Everything else (icons, css, manifest, fixtures): cache-first with background revalidate.
   event.respondWith(
     caches.open(CACHE).then(async (cache) => {
       const key = req.mode === 'navigate' ? './index.html' : req;

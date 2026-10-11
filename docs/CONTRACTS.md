@@ -196,4 +196,4 @@ Single-page, three views toggled by hash: `#/` ranking, `#/settings`, `#/history
 
 ## `sw.js`, `manifest.webmanifest`
 App-shell cache (index.html, styles.css, src/*.js, icons). Network-only for `router.hereapi.com`.
-Cache name includes a version string; old caches deleted on activate.
+Shell HTML and `src/*.js` are network-first with cache fallback; css, icons, manifest, fixtures are cache-first with background revalidate. Cache name includes a version string; old caches deleted on activate.
