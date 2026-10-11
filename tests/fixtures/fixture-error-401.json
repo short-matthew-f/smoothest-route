@@ -1,0 +1,8 @@
+{
+  "error": "Unauthorized",
+  "error_description": "apiKey invalid. apiKey not found.",
+  "title": "Unauthorized",
+  "status": 401,
+  "cause": "apiKey invalid. apiKey not found.",
+  "action": "Provide a valid apiKey."
+}

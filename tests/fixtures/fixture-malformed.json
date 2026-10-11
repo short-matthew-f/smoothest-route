@@ -1,0 +1,50 @@
+{
+  "routes": [
+    {
+      "id": "r-fastest",
+      "sections": [
+        {
+          "id": "r-fastest-s1",
+          "type": "vehicle",
+          "departure": {
+            "time": "2026-10-12T07:30:00-04:00",
+            "place": {
+              "type": "place",
+              "location": {
+                "lat": 41.7473,
+                "lng": -73.1887
+              },
+              "originalLocation": {
+                "lat": 41.7473,
+                "lng": -73.1887
+              }
+            }
+          },
+          "arrival": {
+            "time": "2026-10-12T08:01:11-04:00",
+            "place": {
+              "type": "place",
+              "location": {
+                "lat": 41.7637,
+                "lng": -72.6851
+              },
+              "originalLocation": {
+                "lat": 41.7637,
+                "lng": -72.6851
+              }
+            }
+          },
+          "summary": {
+            "duration": 1871,
+            "length": 42762,
+            "baseDuration": 1848
+          },
+          "transport": {
+            "mode": "car"
+          },
+          "polyline": "BF045-Hr12-NvEk9BtEm9BvEk9BvEk9BtEm9BvEk9B4Sy3B4Sy3B4Sy3B4Sy3B4Sw3B4Sy3B4Sy3B4Sy3B4Sy3BwI64ByI64BwI64BwI64ByI64BwI84ByI64BwI64BwI64ByI64BwI64BvDw-BtDw-BvDw-BtDw-BvDw-BtDw-BvDw-BtDw-BvDw-BlH25BnH25BlH25BnH25BlH25BlH25BnH45BlH25BlH25BnH25BlH25BnH25BlH25BrBm5BpBm5BrBm5BrBm5BpBm5BrBm5B"
+        }
+      ]
+    }
+  ]
+}
