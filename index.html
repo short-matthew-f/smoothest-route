@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Smoothest Route</title>
+  <meta name="description" content="Ranks your commute routes by how close live traffic runs to posted speed.">
+  <meta name="theme-color" content="#1f6feb" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <h1 class="app-name">Smoothest Route</h1>
+    <nav class="nav" aria-label="Main">
+      <a href="#/" data-route="/">Ranking</a>
+      <a href="#/settings" data-route="/settings">Settings</a>
+      <a href="#/history" data-route="/history">History</a>
+    </nav>
+  </header>
+  <main id="view" aria-live="polite"><p class="muted pad">Loading…</p></main>
+  <script type="module" src="src/app.js"></script>
+  <script>
+    // Register the service worker unless running in demo / no-sw mode.
+    (function () {
+      try {
+        var q = location.search;
+        if (!('serviceWorker' in navigator) || /(^|[?&])(demo|nosw)=1(&|$)/.test(q)) return;
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('sw.js').catch(function (e) { console.warn('SW registration failed', e); });
+        });
+      } catch (e) { /* ignore */ }
+    })();
+  </script>
+</body>
+</html>

@@ -68,7 +68,7 @@ test('buildRouteUrl includes every parameter with apikey last', () => {
   assert.equal(u.searchParams.get('transportMode'), 'car');
   assert.equal(u.searchParams.get('origin'), '41.7473,-73.1887');
   assert.equal(u.searchParams.get('destination'), '41.7637,-72.6851');
-  assert.equal(u.searchParams.get('via'), '41.757,-72.887');
+  assert.equal(u.searchParams.get('via'), '41.757,-72.887!passThrough=true');
   assert.equal(u.searchParams.get('departureTime'), '2026-10-12T07:30:00-04:00');
   assert.equal(u.searchParams.get('return'), 'polyline,summary');
   assert.equal(u.searchParams.get('spans'), 'maxSpeed,dynamicSpeedInfo,length,duration');
@@ -96,7 +96,7 @@ test('buildRouteUrl accepts {lat,lng} points and rejects bad ones', () => {
     via: { lat: 41.757, lng: -72.887 },
     apiKey: KEY,
   });
-  assert.equal(new URL(url).searchParams.get('via'), '41.757,-72.887');
+  assert.equal(new URL(url).searchParams.get('via'), '41.757,-72.887!passThrough=true');
   assert.throws(() => buildRouteUrl({ origin: null, destination: B, apiKey: KEY }), TypeError);
 });
 

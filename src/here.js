@@ -53,7 +53,7 @@ export function buildRouteUrl({ origin, destination, via, departureTime, apiKey 
     `origin=${latLng(origin, 'origin')}`,
     `destination=${latLng(destination, 'destination')}`,
   ];
-  if (via != null) parts.push(`via=${latLng(via, 'via')}`);
+  if (via != null) parts.push(`via=${latLng(via, 'via')}!passThrough=true`);
   if (departureTime !== undefined && departureTime !== null) {
     parts.push(`departureTime=${encodeURIComponent(departureTime)}`);
   }

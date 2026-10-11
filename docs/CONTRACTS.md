@@ -81,7 +81,7 @@ Rules:
 - Sort by S ascending; ties (|ΔS| < 1e-9) break on etaSec ascending.
 - Routes with etaDeltaSec > maxPenaltySec go to `hidden` (still sorted).
 - `long-detour` flag if lengthM > lengthRatioFlag × (length of the isFastest route, if present).
-- Dedupe: `rankRoutes` accepts an optional `opts.overlap(a, b) -> 0..1` function (injected from here.js so metric.js stays pure of geometry). When provided, for each pair with overlap > overlapThreshold keep the one with lower S, add the other's name to `mergedWith`, flag 'merged', drop the other.
+- Dedupe: `rankRoutes` accepts an optional `opts.overlap(a, b) -> 0..1` function that receives two **RouteResult objects** (the caller wraps `polylineOverlap(a.polyline, b.polyline)` so metric.js stays pure of geometry). When provided, for each pair with overlap > overlapThreshold keep the one with lower S, add the other's name to `mergedWith`, flag 'merged', drop the other.
 
 ---
 
@@ -92,8 +92,8 @@ export class HereSchemaError extends Error {}   // response shape not what we ex
 export class HereApiError extends Error { status: number }   // non-2xx
 
 /** Build the request URL (string). via may be null/undefined for the fastest route. */
-export function buildRouteUrl({ origin:[lat,lng], destination:[lat,lng], via, departureTime, apiKey })
-//  GET https://router.hereapi.com/v8/routes?transportMode=car&origin=..&destination=..&via=..
+export function buildRouteUrl({ origin, destination, via, departureTime, apiKey })   // points: [lat,lng] or {lat,lng}
+//  GET https://router.hereapi.com/v8/routes?transportMode=car&origin=..&destination=..&via=lat,lng!passThrough=true
 //      &departureTime=..&return=polyline,summary&spans=maxSpeed,dynamicSpeedInfo,length,duration&apikey=..
 //  departureTime: ISO string or 'any'; omit the param if undefined (HERE then uses now).
 
@@ -158,6 +158,8 @@ export async function appendHistory(records)   // records: HistoryRecord[]
 export async function listHistory({ since } = {}) -> HistoryRecord[]
 export async function clearHistory()
 export function historyToCsv(records) -> string
+export async function exportHistoryCsv()          // triggers a browser download
+export function mergeSettings(defaults, stored)  // pure; exported for tests
 
 /** HistoryRecord = { ts: number (epoch ms), direction: 'toWork'|'toHome', corridorId, name, S, badge, etaSec, slowShare, coverage } */
 ```
