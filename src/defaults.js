@@ -1,6 +1,6 @@
 export const DEFAULT_SETTINGS = {
   home:  { name: 'Litchfield', lat: 41.7473, lng: -73.1887 },
-  work:  { name: 'Hartford',   lat: 41.7637, lng: -72.6851 },
+  work:  { name: 'CT Science Center', lat: 41.7648, lng: -72.6690 },
   maxPenaltyMin: 10,
   apiKey: '',
   corridors: [
