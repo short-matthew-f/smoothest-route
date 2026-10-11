@@ -144,11 +144,11 @@ test('rankRoutes separates errors and computes etaDeltaSec vs min non-error ETA'
   assert.deepEqual(ranked.map((r) => r.etaDeltaSec), [0, 400]);
 });
 
-test('rankRoutes flags: long-detour at 1.4x fastest length, estimated, low-confidence', () => {
+test('rankRoutes flags: long-detour above 1.6x fastest length (not at it), estimated, low-confidence', () => {
   const { ranked } = rankRoutes([
     route('fast', 0.5, 1000, 10000, { isFastest: true }),
-    route('edge', 0.4, 1100, 14000),
-    route('detour', 0.3, 1200, 14001),
+    route('edge', 0.4, 1100, 16000),
+    route('detour', 0.3, 1200, 16001),
     route('est', 0.2, 1300, 10000, { score: { estimated: true, lowConfidence: true } }),
   ]);
   const f = Object.fromEntries(ranked.map((r) => [r.name, r.flags]));

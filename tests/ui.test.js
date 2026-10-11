@@ -99,3 +99,18 @@ test('history view groups by corridor with median', () => {
   assert.equal(html.match(/<article/g).length, 1);
   assert.equal(renderHistoryView(recs, { filter: 'toHome' }).includes('<article'), false);
 });
+
+test('settings view: return-via inputs are emitted and prefilled from viaReturn', () => {
+  const html = renderSettingsView({
+    corridors: [
+      { id: 'a', name: 'A', enabled: true, via: { lat: 1, lng: 2 } },
+      { id: 'b', name: 'B', enabled: true, via: { lat: 41.538, lng: -73.004 }, viaReturn: { lat: 41.5382, lng: -73.004 } },
+    ],
+  });
+  for (const n of ['c.0.rlat', 'c.0.rlng', 'c.1.rlat', 'c.1.rlng']) assert.match(html, new RegExp(`name="${n.replace(/\./g, '\\.')}"`));
+  assert.match(html, /Return via latitude/);
+  assert.match(html, /Return via longitude/);
+  assert.match(html, /name="c\.1\.rlat" value="41\.5382"/);
+  assert.match(html, /name="c\.1\.rlng" value="-73\.004"/);
+  assert.match(html, /name="c\.0\.rlat" value=""/);
+});

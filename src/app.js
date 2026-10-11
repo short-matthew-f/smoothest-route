@@ -32,9 +32,11 @@ const endpoints = () => {
   const { home, work } = state.settings;
   return state.direction === 'toWork' ? { origin: home, destination: work } : { origin: work, destination: home };
 };
+const finitePt = (p) => !!p && Number.isFinite(p.lat) && Number.isFinite(p.lng);
+const viaFor = (c, direction) => (direction === 'toHome' && finitePt(c?.viaReturn) ? c.viaReturn : c?.via);
 state.mapsUrlFor = (route) => {
   const { origin, destination } = endpoints();
-  const via = state.settings.corridors?.find((c) => c.id === route.corridorId)?.via;
+  const via = viaFor(state.settings.corridors?.find((c) => c.id === route.corridorId), state.direction);
   const args = { origin, destination, ...(route.isFastest || !via ? {} : { via }) };
   return (isApplePlatform() ? appleMapsUrl : googleMapsUrl)(args);
 };
@@ -60,7 +62,7 @@ function errorMessage(e) {
 // ---------- refresh ----------
 function candidates() {
   const cs = (state.settings.corridors ?? []).filter((c) => c.enabled && c.via)
-    .map((c) => ({ corridorId: c.id, name: c.name, isFastest: false, via: c.via }));
+    .map((c) => ({ corridorId: c.id, name: c.name, isFastest: false, via: viaFor(c, state.direction) }));
   cs.push({ corridorId: FASTEST_ID, name: 'Fastest route', isFastest: true, via: null });
   return cs;
 }
@@ -141,6 +143,9 @@ function readForm(form) {
       via: { lat: num(`c.${i}.lat`), lng: num(`c.${i}.lng`) },
       note: val(`c.${i}.note`),
     });
+    const rlat = num(`c.${i}.rlat`), rlng = num(`c.${i}.rlng`);
+    // Blank/blank -> omitted; a half-filled pair is kept as-is so validate() can reject it.
+    if (Number.isFinite(rlat) || Number.isFinite(rlng)) corridors[i].viaReturn = { lat: rlat, lng: rlng };
   }
   return {
     ...state.settings,
@@ -157,7 +162,11 @@ function validate(s) {
   if (bad(s.home)) return 'Home coordinates are invalid';
   if (bad(s.work)) return 'Work coordinates are invalid';
   const c = s.corridors.find((x) => bad(x.via));
-  return c ? `Via coordinates for "${c.name}" are invalid` : null;
+  if (c) return `Via coordinates for "${c.name}" are invalid`;
+  const half = s.corridors.find((x) => x.viaReturn && Number.isFinite(x.viaReturn.lat) !== Number.isFinite(x.viaReturn.lng));
+  if (half) return `Return via for "${half.name}": fill in both latitude and longitude, or leave both blank`;
+  const badRet = s.corridors.find((x) => x.viaReturn && bad(x.viaReturn));
+  return badRet ? `Return via coordinates for "${badRet.name}" are invalid` : null;
 }
 
 // ---------- routing / render ----------

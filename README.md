@@ -31,11 +31,19 @@ Pushes to `master` run the tests and deploy the repo root to GitHub Pages via
 
 ## First-time setup on the phone
 
-1. Get a HERE API key (see [docs/research.md](docs/research.md) for plan limits and how to
-   restrict the key to your Pages origin).
+1. Get a HERE API key. A HERE Base plan needs a credit card (you are not charged within the free
+   tier). The key goes in **Settings** in the app (never in the repo). Restrict it under
+   Access Manager → Apps → your app → Trusted domains with your `<user>.github.io` domain
+   (see Q2–Q3 in [docs/research.md](docs/research.md)).
 2. Open the deployed site, go to **Settings**, paste the key, check the home/work and corridor
    waypoint coordinates, save.
 3. Add to Home Screen. The key lives only in the phone's IndexedDB and is never committed.
+
+## Known limits
+
+- Live-speed coverage on rural CT roads may be low; watch the Low confidence chip.
+- The I-84 corridor uses separate via points per direction (`via` and `viaReturn`).
+- HERE's fastest route may coincide with the US-44 corridor and be merged into it.
 
 ## Layout
 

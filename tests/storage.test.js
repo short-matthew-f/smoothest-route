@@ -32,6 +32,14 @@ test('mergeSettings replaces corridors array wholesale', () => {
   assert.deepEqual(empty.corridors, []);
 });
 
+test('mergeSettings preserves a stored corridor with viaReturn', () => {
+  const stored = [{ id: 'r', name: 'R', enabled: true, via: { lat: 1, lng: 2 }, viaReturn: { lat: 3, lng: 4 } }];
+  const m = mergeSettings(DEFAULT_SETTINGS, { corridors: stored });
+  assert.deepEqual(m.corridors, stored);
+  assert.deepEqual(m.corridors[0].viaReturn, { lat: 3, lng: 4 });
+  assert.deepEqual(DEFAULT_SETTINGS.corridors.find((c) => c.id === 'rt8').viaReturn, { lat: 41.5382, lng: -73.004 });
+});
+
 test('mergeSettings keeps unknown stored keys and ignores undefined', () => {
   const m = mergeSettings(DEFAULT_SETTINGS, { extra: 5, apiKey: undefined });
   assert.equal(m.extra, 5);

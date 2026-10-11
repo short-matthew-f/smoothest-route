@@ -162,6 +162,8 @@ export function renderSettingsView(settings) {
       <input type="hidden" name="c.${i}.note" value="${esc(c?.note)}">
       ${textField('Corridor name', `c.${i}.name`, c?.name)}
       <div class="row">${numField('Via latitude', `c.${i}.lat`, c?.via?.lat)}${numField('Via longitude', `c.${i}.lng`, c?.via?.lng)}</div>
+      <div class="row">${numField('Return via latitude', `c.${i}.rlat`, c?.viaReturn?.lat)}${numField('Return via longitude', `c.${i}.rlng`, c?.viaReturn?.lng)}</div>
+      <p class="muted">Return via (optional, for divided highways): used instead of the via point when going to home.</p>
       <div class="actions"><label class="check"><input type="checkbox" name="c.${i}.enabled"${c?.enabled ? ' checked' : ''}> Enabled</label>
       <span class="grow"></span><button type="button" class="danger" data-action="remove-corridor" data-index="${i}">Remove</button></div>
     </div>`).join('');

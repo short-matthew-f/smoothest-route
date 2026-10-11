@@ -65,7 +65,7 @@ Rules:
 /**
  * @param {RouteResult[]} results
  * @param {{maxPenaltySec?: number, lengthRatioFlag?: number, overlapThreshold?: number}} opts
- *   defaults: maxPenaltySec 600, lengthRatioFlag 1.4, overlapThreshold 0.85
+ *   defaults: maxPenaltySec 600, lengthRatioFlag 1.6, overlapThreshold 0.85
  * @returns {{ ranked: RankedRoute[], hidden: RankedRoute[], errors: RouteResult[] }}
  *
  * RankedRoute = RouteResult & {
@@ -138,14 +138,17 @@ export const DEFAULT_SETTINGS = {
   maxPenaltyMin: 10,
   apiKey: '',
   corridors: [
-    { id: 'rt4',     name: 'Rt 4',            enabled: true, via: { lat: 41.7570, lng: -72.8870 }, note: 'Burlington / Unionville' },
-    { id: 'us202',   name: 'US 202 → Rt 44',  enabled: true, via: { lat: 41.8100, lng: -72.8300 }, note: 'Canton / Avon' },
-    { id: 'rt8',     name: 'Rt 8 → I-84',     enabled: true, via: { lat: 41.5560, lng: -73.0380 }, note: 'Waterbury interchange' },
+    { id: 'rt4',     name: 'Rt 4',            enabled: true, via: { lat: 41.7738, lng: -72.9495 }, note: 'CT-4 Spielman Hwy, Burlington' },
+    { id: 'us202',   name: 'US 202 → Rt 44',  enabled: true, via: { lat: 41.8296, lng: -72.9023 }, note: 'US-44 Albany Tpke, Canton' },
+    { id: 'rt8',     name: 'Rt 8 → I-84',     enabled: true, via: { lat: 41.5380, lng: -73.0040 }, viaReturn: { lat: 41.5382, lng: -73.0040 }, note: 'I-84 east of Rt 8; divided highway so return uses the westbound carriageway' },
   ],
 };
 export const FASTEST_ID = 'fastest';   // the no-via HERE route, always evaluated
 ```
-Coordinates are approximate placeholders; Settings lets the user edit them.
+Coordinates are research-verified (docs/research.md Q6); Settings lets the user edit them.
+A corridor may carry an optional `viaReturn: {lat, lng}`; it is used instead of `via` for the
+`toHome` direction (for divided highways where each direction has its own carriageway). It is
+only honoured when both lat and lng are finite numbers.
 
 ---
 

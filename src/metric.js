@@ -64,12 +64,13 @@ export function scoreRoute(spans) {
  * Rank route results by smoothness (S ascending, ties on ETA), hide those too slow, merge near-duplicates.
  * @param {Array<object>} results RouteResult[] (see docs/CONTRACTS.md)
  * @param {{maxPenaltySec?:number, lengthRatioFlag?:number, overlapThreshold?:number,
- *   overlap?:(a:object,b:object)=>number}} [opts] defaults 600 / 1.4 / 0.85; `overlap` is optional
+ *   overlap?:(a:object,b:object)=>number}} [opts] defaults 600 / 1.6 / 0.85; `overlap` is optional
  * @returns {{ranked:Array<object>, hidden:Array<object>, errors:Array<object>}}
  *   Each ranked/hidden entry is a copy of its RouteResult plus etaDeltaSec, flags, mergedWith.
  */
 export function rankRoutes(results, opts = {}) {
-  const { maxPenaltySec = 600, lengthRatioFlag = 1.4, overlapThreshold = 0.85, overlap } = opts || {};
+  const { maxPenaltySec = 600, lengthRatioFlag = 1.6, // Rt 8 / I-84 is ~47% longer than the direct route by design; 1.4 would flag it every time
+    overlapThreshold = 0.85, overlap } = opts || {};
   const errors = results.filter((r) => r.error || !r.score);
   const ok = results.filter((r) => !(r.error || !r.score));
   const minEta = Math.min(...ok.map((r) => r.etaSec));
