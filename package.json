@@ -1,0 +1,12 @@
+{
+  "name": "smoothest-route",
+  "version": "0.1.0",
+  "description": "Smooth Commute Router: ranks Litchfield→Hartford routes by how close live traffic runs to posted speed.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/",
+    "serve": "python3 -m http.server 8080"
+  },
+  "license": "MIT"
+}
