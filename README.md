@@ -7,11 +7,17 @@ for the full design and [docs/CONTRACTS.md](docs/CONTRACTS.md) for module interf
 ## How it works
 
 1. On refresh the app asks the HERE Routing API v8 for one route per named corridor
-   (forced through a `via` waypoint) plus HERE's own fastest route.
-2. Each route's spans carry a posted limit (`maxSpeed`) and a live traffic speed
+   (forced through its ordered list of `vias`, which may be empty) plus HERE's own fastest route.
+   A corridor can also set **Avoid highways**: that candidate is requested with
+   `avoid[features]=controlledAccessHighway`, and the default "No highways" corridor uses it with no vias.
+   Going home, a corridor uses its `viasReturn` if set, otherwise its `vias` in reverse order.
+2. Each request also asks HERE for up to `alternatives` extra routes (Settings, 0-3, default 1).
+   Alternatives come back in the same response as the primary route, so they add no extra requests;
+   they show up as separate cards named like "Rt 4 (alt 1)". Near-identical routes are merged.
+3. Each route's spans carry a posted limit (`maxSpeed`) and a live traffic speed
    (`dynamicSpeedInfo.trafficSpeed`). For each span, `r = min(live / limit, 1)`.
-3. Smoothness `S = sqrt( Σ t·(1−r)² / Σ t )`, time-weighted. The badge shown is `100·(1−S)`.
-4. Routes are sorted by S, with the ETA penalty vs. the fastest route shown beside each.
+4. Smoothness `S = sqrt( Σ t·(1−r)² / Σ t )`, time-weighted. The badge shown is `100·(1−S)`.
+5. Routes are sorted by S, with the ETA penalty vs. the fastest route shown beside each.
 
 ## Running
 
@@ -42,7 +48,15 @@ Pushes to `master` run the tests and deploy the repo root to GitHub Pages via
 ## Known limits
 
 - Live-speed coverage on rural CT roads may be low; watch the Low confidence chip.
-- The I-84 corridor uses separate via points per direction (`via` and `viaReturn`).
+- Divided highways (e.g. I-84) need separate via points per direction: set the corridor's
+  return vias (`viasReturn`). Undivided roads can leave it empty and the vias are reversed.
+- Multi-via corridors force HERE through every via in order, so a badly placed via can create a
+  detour; the Long detour chip and the hidden-routes cutoff are the guardrails.
+- Neither Google nor Apple Maps has a reliable avoid-highways URL option, so "Open in Maps" for a
+  No highways route may show a different road than the one scored (Google gets `avoid=highways`
+  as a best-effort hint).
+- `alternatives=N` may be billed by HERE per returned route rather than per request. This is
+  unverified; set Alternatives to 0 in Settings if it matters for your quota.
 - HERE's fastest route may coincide with the US-44 corridor and be merged into it.
 
 ## Layout

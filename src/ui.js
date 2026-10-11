@@ -64,6 +64,7 @@ const LEGEND = `<div class="legend" aria-hidden="true"><span><i class="dot green
 
 function chips(r) {
   const out = [];
+  if (r?.avoidHighways) out.push(`<span class="chip">No highways</span>`);
   for (const f of r?.flags ?? []) {
     if (f === 'merged') {
       const names = (r.mergedWith ?? []).map(esc).join(', ');
@@ -95,6 +96,7 @@ export function renderRouteCard(ranked, { expanded = false, mapsUrl = '' } = {})
         <dt>Delay vs free flow</dt><dd>${fmtMin(sc?.delaySec)}</dd>
         <dt>Distance</dt><dd>${miles}</dd>
       </dl>
+      ${r.avoidHighways ? `<p class="muted small">Maps apps may ignore the no-highways preference; check the route they show.</p>` : ''}
       ${mapsUrl ? `<a class="btn primary" href="${esc(mapsUrl)}" target="_blank" rel="noopener">Open in Maps</a>` : ''}
     </div>`;
   }
@@ -155,24 +157,41 @@ function place(key, title, p) {
     <div class="row">${numField('Latitude', `${key}.lat`, p?.lat)}${numField('Longitude', `${key}.lng`, p?.lng)}</div></fieldset>`;
 }
 
+/** One editable list of via points; names are `${prefix}.${j}.lat|lng`. */
+function viaList(prefix, list, index, { label, removeAction, addAction, addLabel }) {
+  const rows = (Array.isArray(list) ? list : []).map((p, j) => `<div class="row via-row" data-via="${j}">
+      ${numField(`${label} ${j + 1} latitude`, `${prefix}.${j}.lat`, p?.lat)}${numField(`${label} ${j + 1} longitude`, `${prefix}.${j}.lng`, p?.lng)}
+      <div class="field"><button type="button" class="danger" data-action="${removeAction}" data-index="${index}" data-via="${j}" aria-label="Remove ${esc(label.toLowerCase())} ${j + 1}">✕</button></div>
+    </div>`).join('');
+  return `${rows}<div class="actions"><button type="button" data-action="${addAction}" data-index="${index}">${addLabel}</button></div>`;
+}
+
 export function renderSettingsView(settings) {
   const s = settings ?? {};
-  const corridors = (s.corridors ?? []).map((c, i) => `<div class="corridor" data-index="${i}">
+  const corridors = (s.corridors ?? []).map((c, i) => {
+    const ret = Array.isArray(c?.viasReturn) ? c.viasReturn : [];
+    return `<div class="corridor" data-index="${i}">
       <input type="hidden" name="c.${i}.id" value="${esc(c?.id)}">
       <input type="hidden" name="c.${i}.note" value="${esc(c?.note)}">
       ${textField('Corridor name', `c.${i}.name`, c?.name)}
-      <div class="row">${numField('Via latitude', `c.${i}.lat`, c?.via?.lat)}${numField('Via longitude', `c.${i}.lng`, c?.via?.lng)}</div>
-      <div class="row">${numField('Return via latitude', `c.${i}.rlat`, c?.viaReturn?.lat)}${numField('Return via longitude', `c.${i}.rlng`, c?.viaReturn?.lng)}</div>
-      <p class="muted">Return via (optional, for divided highways): used instead of the via point when going to home.</p>
+      ${viaList(`c.${i}.v`, c?.vias, i, { label: 'Via', removeAction: 'remove-via', addAction: 'add-via', addLabel: 'Add via' })}
+      <details class="return-vias"${ret.length ? ' open' : ''}><summary>Return trip vias (optional, for divided highways)</summary>
+        <p class="muted">Used instead of the vias above when going to home, in travel order. If empty, the vias above are used in reverse.</p>
+        ${viaList(`c.${i}.rv`, ret, i, { label: 'Return via', removeAction: 'remove-return-via', addAction: 'add-return-via', addLabel: 'Add return via' })}
+      </details>
+      <div class="actions"><label class="check"><input type="checkbox" name="c.${i}.avoid"${c?.avoidHighways ? ' checked' : ''}> Avoid highways</label></div>
       <div class="actions"><label class="check"><input type="checkbox" name="c.${i}.enabled"${c?.enabled ? ' checked' : ''}> Enabled</label>
       <span class="grow"></span><button type="button" class="danger" data-action="remove-corridor" data-index="${i}">Remove</button></div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+  const alt = isNum(s.alternatives) ? s.alternatives : 1;
   return `<h2>Settings</h2>
   <form id="settings-form" autocomplete="off">
     ${place('home', 'Home', s.home)}
     ${place('work', 'Work', s.work)}
     <fieldset><legend>Options</legend>
       ${numField('Hide routes slower than fastest by (minutes)', 'maxPenaltyMin', s.maxPenaltyMin, 'min="0"')}
+      <div class="field"><label>Alternatives per request (0–3)<input type="number" step="1" min="0" max="3" inputmode="numeric" name="alternatives" value="${alt}"></label></div>
       <div class="row key"><div class="field"><label>HERE API key<input type="password" name="apiKey" value="${esc(s.apiKey)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label></div>
       <div class="field"><button type="button" data-action="toggle-key">Show</button></div></div>
     </fieldset>

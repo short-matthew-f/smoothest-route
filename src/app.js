@@ -1,6 +1,6 @@
 // Controller: hash router, state, refresh pipeline, event wiring. Browser only.
 import { scoreRoute, rankRoutes } from './metric.js';
-import { fetchRoute, parseRouteResponse, polylineOverlap, HereSchemaError, HereApiError } from './here.js';
+import { fetchRoutes, parseRoutesResponse, polylineOverlap, HereSchemaError, HereApiError } from './here.js';
 import { loadSettings, saveSettings, appendHistory, listHistory, clearHistory, exportHistoryCsv } from './storage.js';
 import { googleMapsUrl, appleMapsUrl, isApplePlatform } from './maps.js';
 import { DEFAULT_SETTINGS, FASTEST_ID } from './defaults.js';
@@ -32,12 +32,17 @@ const endpoints = () => {
   const { home, work } = state.settings;
   return state.direction === 'toWork' ? { origin: home, destination: work } : { origin: work, destination: home };
 };
-const finitePt = (p) => !!p && Number.isFinite(p.lat) && Number.isFinite(p.lng);
-const viaFor = (c, direction) => (direction === 'toHome' && finitePt(c?.viaReturn) ? c.viaReturn : c?.via);
+/** Vias for a corridor in a direction: toHome uses viasReturn if non-empty, else vias reversed. */
+const viasFor = (c, direction) => {
+  const vias = Array.isArray(c?.vias) ? c.vias : [];
+  if (direction !== 'toHome') return vias;
+  const ret = Array.isArray(c?.viasReturn) ? c.viasReturn : [];
+  return ret.length ? ret : [...vias].reverse();
+};
 state.mapsUrlFor = (route) => {
   const { origin, destination } = endpoints();
-  const via = viaFor(state.settings.corridors?.find((c) => c.id === route.corridorId), state.direction);
-  const args = { origin, destination, ...(route.isFastest || !via ? {} : { via }) };
+  const vias = route.vias ?? [];
+  const args = { origin, destination, ...(vias.length ? { vias } : {}), ...(route.avoidHighways ? { avoidHighways: true } : {}) };
   return (isApplePlatform() ? appleMapsUrl : googleMapsUrl)(args);
 };
 
@@ -61,9 +66,9 @@ function errorMessage(e) {
 
 // ---------- refresh ----------
 function candidates() {
-  const cs = (state.settings.corridors ?? []).filter((c) => c.enabled && c.via)
-    .map((c) => ({ corridorId: c.id, name: c.name, isFastest: false, via: viaFor(c, state.direction) }));
-  cs.push({ corridorId: FASTEST_ID, name: 'Fastest route', isFastest: true, via: null });
+  const cs = (state.settings.corridors ?? []).filter((c) => c.enabled)
+    .map((c) => ({ corridorId: c.id, name: c.name, isFastest: false, avoidHighways: !!c.avoidHighways, vias: viasFor(c, state.direction) }));
+  cs.push({ corridorId: FASTEST_ID, name: 'Fastest route', isFastest: true, avoidHighways: false, vias: [] });
   return cs;
 }
 
@@ -73,7 +78,24 @@ async function fetchDemo(c, corridorIndex) {
   const file = c.isFastest ? DEMO_FIXTURES.fastest : (DEMO_FIXTURES.corridors[corridorIndex] ?? DEMO_FIXTURES.extra);
   const res = await fetch(`tests/fixtures/${file}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}: fixture ${file} missing`);
-  return parseRouteResponse(await res.json());
+  return parseRoutesResponse(await res.json());
+}
+
+/** Expand one candidate's settled fetch into RouteResults: route i -> id/name with ~alt suffix. */
+function toResults(c, s) {
+  const base = { corridorId: c.corridorId, name: c.name, isFastest: c.isFastest, avoidHighways: c.avoidHighways, vias: c.vias };
+  const fail = (b, e) => ({ ...b, score: null, etaSec: 0, lengthM: 0, polyline: [], error: errorMessage(e) });
+  if (s.status === 'rejected') return [fail(base, s.reason)];
+  const routes = Array.isArray(s.value) ? s.value : [s.value];
+  if (!routes.length) return [fail(base, new Error('HERE returned no routes'))];
+  return routes.map((p, i) => {
+    const b = i === 0 ? base : { ...base, corridorId: `${c.corridorId}~alt${i}`, name: `${c.name} (alt ${i})`, isFastest: false };
+    try {
+      return { ...b, score: scoreRoute(p.spans), etaSec: p.etaSec, lengthM: p.lengthM, polyline: p.polyline ?? [], error: null };
+    } catch (e) {
+      return fail(b, e);
+    }
+  });
 }
 
 async function refresh() {
@@ -86,30 +108,19 @@ async function refresh() {
   const direction = state.direction;
   const { origin, destination } = endpoints();
   const cands = candidates();
+  const alternatives = Number.isInteger(state.settings.alternatives) ? state.settings.alternatives : 1;
   let ci = 0;
   const jobs = cands.map((c) => {
     const idx = c.isFastest ? -1 : ci++;
     if (DEMO) return fetchDemo(c, idx);
-    return fetchRoute({
+    return fetchRoutes({
       origin: latlng(origin), destination: latlng(destination),
-      via: c.via ? latlng(c.via) : null, apiKey: state.settings.apiKey,
+      vias: c.vias.map(latlng), avoidHighways: c.avoidHighways, alternatives, apiKey: state.settings.apiKey,
     });
   });
   const settled = await Promise.allSettled(jobs);
   if (gen !== state.gen) { state.loading = false; renderIfRanking(); return; }
-  const results = settled.map((s, i) => {
-    const c = cands[i];
-    const base = { corridorId: c.corridorId, name: c.name, isFastest: c.isFastest };
-    if (s.status === 'rejected') {
-      return { ...base, score: null, etaSec: 0, lengthM: 0, polyline: [], error: errorMessage(s.reason) };
-    }
-    try {
-      const p = s.value;
-      return { ...base, score: scoreRoute(p.spans), etaSec: p.etaSec, lengthM: p.lengthM, polyline: p.polyline ?? [], error: null };
-    } catch (e) {
-      return { ...base, score: null, etaSec: 0, lengthM: 0, polyline: [], error: errorMessage(e) };
-    }
-  });
+  const results = settled.flatMap((s, i) => toResults(cands[i], s));
   try {
     state.results = rankRoutes(results, { maxPenaltySec: (state.settings.maxPenaltyMin ?? 10) * 60, overlap: (a, b) => polylineOverlap(a.polyline ?? [], b.polyline ?? []) });
   } catch (e) {
@@ -134,24 +145,33 @@ function readForm(form) {
   const f = form.elements;
   const num = (n) => Number.parseFloat(f[n]?.value);
   const val = (n) => f[n]?.value ?? '';
+  // Rows are read in DOM order; a blank coordinate stays NaN so validate() can reject it.
+  const readPts = (prefix) => {
+    const pts = [];
+    for (let j = 0; f[`${prefix}.${j}.lat`]; j++) pts.push({ lat: num(`${prefix}.${j}.lat`), lng: num(`${prefix}.${j}.lng`) });
+    return pts;
+  };
   const corridors = [];
   for (let i = 0; f[`c.${i}.name`]; i++) {
-    corridors.push({
+    const c = {
       id: val(`c.${i}.id`) || `c${Date.now()}${i}`,
       name: val(`c.${i}.name`).trim() || `Corridor ${i + 1}`,
       enabled: f[`c.${i}.enabled`].checked,
-      via: { lat: num(`c.${i}.lat`), lng: num(`c.${i}.lng`) },
+      vias: readPts(`c.${i}.v`),
+      avoidHighways: !!f[`c.${i}.avoid`]?.checked,
       note: val(`c.${i}.note`),
-    });
-    const rlat = num(`c.${i}.rlat`), rlng = num(`c.${i}.rlng`);
-    // Blank/blank -> omitted; a half-filled pair is kept as-is so validate() can reject it.
-    if (Number.isFinite(rlat) || Number.isFinite(rlng)) corridors[i].viaReturn = { lat: rlat, lng: rlng };
+    };
+    const viasReturn = readPts(`c.${i}.rv`);
+    if (viasReturn.length) c.viasReturn = viasReturn;
+    corridors.push(c);
   }
+  const alt = num('alternatives');
   return {
     ...state.settings,
     home: { name: val('home.name').trim(), lat: num('home.lat'), lng: num('home.lng') },
     work: { name: val('work.name').trim(), lat: num('work.lat'), lng: num('work.lng') },
     maxPenaltyMin: Number.isFinite(num('maxPenaltyMin')) ? num('maxPenaltyMin') : DEFAULT_SETTINGS.maxPenaltyMin,
+    alternatives: Number.isFinite(alt) ? alt : (DEFAULT_SETTINGS.alternatives ?? 1),
     apiKey: val('apiKey').trim(),
     corridors,
   };
@@ -161,12 +181,14 @@ function validate(s) {
   const bad = (p) => !Number.isFinite(p?.lat) || !Number.isFinite(p?.lng) || Math.abs(p.lat) > 90 || Math.abs(p.lng) > 180;
   if (bad(s.home)) return 'Home coordinates are invalid';
   if (bad(s.work)) return 'Work coordinates are invalid';
-  const c = s.corridors.find((x) => bad(x.via));
-  if (c) return `Via coordinates for "${c.name}" are invalid`;
-  const half = s.corridors.find((x) => x.viaReturn && Number.isFinite(x.viaReturn.lat) !== Number.isFinite(x.viaReturn.lng));
-  if (half) return `Return via for "${half.name}": fill in both latitude and longitude, or leave both blank`;
-  const badRet = s.corridors.find((x) => x.viaReturn && bad(x.viaReturn));
-  return badRet ? `Return via coordinates for "${badRet.name}" are invalid` : null;
+  if (!Number.isInteger(s.alternatives) || s.alternatives < 0 || s.alternatives > 3) return 'Alternatives per request must be a whole number from 0 to 3';
+  for (const c of s.corridors) {
+    const v = (c.vias ?? []).findIndex(bad);
+    if (v >= 0) return `Via ${v + 1} coordinates for "${c.name}" are invalid`;
+    const r = (c.viasReturn ?? []).findIndex(bad);
+    if (r >= 0) return `Return via ${r + 1} coordinates for "${c.name}" are invalid`;
+  }
+  return null;
 }
 
 // ---------- routing / render ----------
@@ -220,12 +242,29 @@ viewEl.addEventListener('click', async (e) => {
     }
     case 'add-corridor':
       state.draft = readForm(form);
-      state.draft.corridors.push({ id: `c${Date.now()}`, name: 'New corridor', enabled: true, via: { lat: NaN, lng: NaN }, note: '' });
+      state.draft.corridors.push({ id: `c${Date.now()}`, name: 'New corridor', enabled: true, vias: [], viasReturn: [], avoidHighways: false, note: '' });
       return render();
     case 'remove-corridor':
       state.draft = readForm(form);
       state.draft.corridors.splice(Number(el.dataset.index), 1);
       return render();
+    case 'add-via':
+    case 'add-return-via': {
+      state.draft = readForm(form);
+      const c = state.draft.corridors[Number(el.dataset.index)];
+      const key = action === 'add-via' ? 'vias' : 'viasReturn';
+      c[key] = [...(c[key] ?? []), { lat: NaN, lng: NaN }];
+      return render();
+    }
+    case 'remove-via':
+    case 'remove-return-via': {
+      state.draft = readForm(form);
+      const c = state.draft.corridors[Number(el.dataset.index)];
+      const key = action === 'remove-via' ? 'vias' : 'viasReturn';
+      c[key]?.splice(Number(el.dataset.via), 1);
+      if (key === 'viasReturn' && !c.viasReturn?.length) delete c.viasReturn;
+      return render();
+    }
     case 'reset-defaults':
       if (!confirm('Reset all settings to defaults? This clears your API key and corridors.')) return;
       state.settings = structuredClone(DEFAULT_SETTINGS);

@@ -109,6 +109,10 @@ input[type="text"], input[type="password"], input[type="number"] {
 fieldset { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); margin: 12px 0; padding: 8px 12px 12px; }
 legend { padding: 0 6px; font-weight: 600; }
 .corridor { border-top: 1px dashed var(--border); padding-top: 10px; margin-top: 10px; }
+/* v0.2: via rows have a trailing remove button; return-via list is collapsible */
+.row.via-row { grid-template-columns: 1fr 1fr auto; align-items: end; }
+.return-vias { margin: 6px 0; }
+.return-vias summary { cursor: pointer; color: var(--muted); padding: 6px 0; }
 .corridor:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
 .check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 1rem; }
 .check input { width: 22px; height: 22px; }

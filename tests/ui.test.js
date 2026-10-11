@@ -100,17 +100,55 @@ test('history view groups by corridor with median', () => {
   assert.equal(renderHistoryView(recs, { filter: 'toHome' }).includes('<article'), false);
 });
 
-test('settings view: return-via inputs are emitted and prefilled from viaReturn', () => {
+test('settings view: via rows, empty list, avoid checkbox, alternatives', () => {
   const html = renderSettingsView({
+    alternatives: 2,
     corridors: [
-      { id: 'a', name: 'A', enabled: true, via: { lat: 1, lng: 2 } },
-      { id: 'b', name: 'B', enabled: true, via: { lat: 41.538, lng: -73.004 }, viaReturn: { lat: 41.5382, lng: -73.004 } },
+      { id: 'a', name: 'A', enabled: true, vias: [] },
+      { id: 'b', name: 'B', enabled: true, avoidHighways: true,
+        vias: [{ lat: 41.1, lng: -72.1 }, { lat: 41.2, lng: -72.2 }],
+        viasReturn: [{ lat: 41.5382, lng: -73.004 }] },
     ],
   });
-  for (const n of ['c.0.rlat', 'c.0.rlng', 'c.1.rlat', 'c.1.rlng']) assert.match(html, new RegExp(`name="${n.replace(/\./g, '\\.')}"`));
-  assert.match(html, /Return via latitude/);
-  assert.match(html, /Return via longitude/);
-  assert.match(html, /name="c\.1\.rlat" value="41\.5382"/);
-  assert.match(html, /name="c\.1\.rlng" value="-73\.004"/);
-  assert.match(html, /name="c\.0\.rlat" value=""/);
+  // corridor 0: no via rows, but the Add buttons exist
+  assert.equal(html.includes('name="c.0.v.0.lat"'), false);
+  assert.equal(html.includes('name="c.0.rv.0.lat"'), false);
+  assert.match(html, /data-action="add-via" data-index="0"/);
+  assert.match(html, /data-action="add-return-via" data-index="0"/);
+  // corridor 1: rows in order with values, remove buttons carry indexes
+  assert.match(html, /name="c\.1\.v\.0\.lat" value="41\.1"/);
+  assert.match(html, /name="c\.1\.v\.1\.lng" value="-72\.2"/);
+  assert.equal(html.includes('name="c.1.v.2.lat"'), false);
+  assert.match(html, /data-action="remove-via" data-index="1" data-via="1"/);
+  assert.match(html, /name="c\.1\.rv\.0\.lat" value="41\.5382"/);
+  assert.match(html, /data-action="remove-return-via" data-index="1" data-via="0"/);
+  assert.match(html, /Return trip vias/);
+  // return list opens only when it has entries
+  assert.equal(html.match(/<details class="return-vias" open>/g).length, 1);
+  // avoid highways: unchecked for corridor 0, checked for corridor 1
+  assert.match(html, /name="c\.0\.avoid">/);
+  assert.match(html, /name="c\.1\.avoid" checked>/);
+  // alternatives and no legacy single-via fields
+  assert.match(html, /name="alternatives"[^>]*value="2"/);
+  assert.match(html, /Alternatives per request/);
+  assert.equal(/name="c\.\d\.(lat|lng|rlat|rlng)"/.test(html), false);
+  assert.match(renderSettingsView({ corridors: [] }), /name="alternatives"[^>]*value="1"/);
+});
+
+test('settings view escapes corridor names in via controls', () => {
+  const html = renderSettingsView({ corridors: [{ id: '"><x>', name: '"><script>', enabled: true, vias: [{ lat: 1, lng: 2 }] }] });
+  assert.equal(html.includes('<script>'), false);
+  assert.equal(html.includes('"><x>'), false);
+});
+
+test('route card: No highways chip and alt-route name', () => {
+  const plain = renderRouteCard(route());
+  assert.equal(plain.includes('No highways'), false);
+  const nh = renderRouteCard(route({ avoidHighways: true }), { expanded: true, mapsUrl: 'https://m/' });
+  assert.match(nh, /<span class="chip">No highways<\/span>/);
+  const alt = renderRouteCard(route({ corridorId: 'rt4~alt1', name: 'Rt 4 (alt 1)' }));
+  assert.match(alt, /Rt 4 \(alt 1\)/);
+  assert.match(alt, /data-id="rt4~alt1"/);
+  const evil = renderRouteCard(route({ name: '<b>x</b> (alt 2)', avoidHighways: true }));
+  assert.equal(evil.includes('<b>x'), false);
 });
