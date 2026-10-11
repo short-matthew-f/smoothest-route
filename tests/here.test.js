@@ -8,9 +8,11 @@ import {
   HereApiError,
   buildRouteUrl,
   parseRouteResponse,
+  parseRoutesResponse,
   decodeFlexiblePolyline,
   polylineOverlap,
   fetchRoute,
+  fetchRoutes,
 } from '../src/here.js';
 
 const fixture = (name) =>
@@ -101,6 +103,52 @@ test('buildRouteUrl accepts {lat,lng} points and rejects bad ones', () => {
 });
 
 // --- decodeFlexiblePolyline -------------------------------------------------
+test('buildRouteUrl emits one via param per point in order (vias array)', () => {
+  const vias = [[41.1, -72.1], { lat: 41.2, lng: -72.2 }, [41.3, -72.3]];
+  const url = buildRouteUrl({ origin: A, destination: B, vias, apiKey: KEY });
+  const u = new URL(url);
+  assert.deepEqual(u.searchParams.getAll('via'), [
+    '41.1,-72.1!passThrough=true',
+    '41.2,-72.2!passThrough=true',
+    '41.3,-72.3!passThrough=true',
+  ]);
+  assert.ok(url.endsWith(`&apikey=${KEY}`));
+  assert.equal(new URL(buildRouteUrl({ origin: A, destination: B, vias: [], apiKey: KEY })).searchParams.has('via'), false);
+  assert.throws(() => buildRouteUrl({ origin: A, destination: B, vias: [[1, 2], null], apiKey: KEY }), TypeError);
+});
+
+test('buildRouteUrl: legacy via equals vias [via]; vias wins when both given', () => {
+  const legacy = buildRouteUrl({ origin: A, destination: B, via: [41.1, -72.1], apiKey: KEY });
+  const arr = buildRouteUrl({ origin: A, destination: B, vias: [[41.1, -72.1]], apiKey: KEY });
+  assert.equal(legacy, arr);
+  const both = new URL(buildRouteUrl({ origin: A, destination: B, via: [1, 2], vias: [[41.1, -72.1]], apiKey: KEY }));
+  assert.deepEqual(both.searchParams.getAll('via'), ['41.1,-72.1!passThrough=true']);
+});
+
+test('buildRouteUrl avoidHighways adds encoded avoid[features] only when true', () => {
+  const on = buildRouteUrl({ origin: A, destination: B, avoidHighways: true, apiKey: KEY });
+  assert.ok(on.includes('avoid%5Bfeatures%5D=controlledAccessHighway'));
+  assert.equal(new URL(on).searchParams.get('avoid[features]'), 'controlledAccessHighway');
+  assert.ok(on.endsWith(`&apikey=${KEY}`));
+  for (const v of [false, undefined, null]) {
+    const off = buildRouteUrl({ origin: A, destination: B, avoidHighways: v, apiKey: KEY });
+    assert.ok(!off.includes('avoid'));
+  }
+});
+
+test('buildRouteUrl alternatives present only when >= 1, apikey still last', () => {
+  for (const n of [0, undefined, null, -1, NaN]) {
+    const url = buildRouteUrl({ origin: A, destination: B, alternatives: n, apiKey: KEY });
+    assert.equal(new URL(url).searchParams.has('alternatives'), false);
+  }
+  const url = buildRouteUrl({
+    origin: A, destination: B, vias: [[41.1, -72.1]], avoidHighways: true, alternatives: 2,
+    departureTime: 'any', apiKey: KEY,
+  });
+  assert.equal(new URL(url).searchParams.get('alternatives'), '2');
+  assert.ok(url.endsWith(`&apikey=${KEY}`));
+});
+
 test('decodeFlexiblePolyline matches the spec test vector', () => {
   assert.deepEqual(decodeFlexiblePolyline('BFoz5xJ67i1B1B7PzIhaxL7Y'), [
     [50.10228, 8.69821],
@@ -297,6 +345,30 @@ test('parseRouteResponse throws HereSchemaError on malformed input', () => {
   assert.throws(() => parseRouteResponse(badSpan), HereSchemaError);
 });
 
+// --- parseRoutesResponse ----------------------------------------------------
+test('parseRoutesResponse returns one parsed route per routes[i]', () => {
+  const body = fixture('fixture-fastest.json');
+  const all = parseRoutesResponse(body);
+  assert.equal(all.length, 2);
+  assert.equal(all[0].spans.length, 20);
+  assert.equal(all[1].spans.length, 20);
+  assert.equal(all[0].etaSec, body.routes[0].sections[0].summary.duration);
+  assert.equal(all[1].etaSec, body.routes[1].sections[0].summary.duration);
+  assert.ok(all[1].etaSec > all[0].etaSec);
+  assert.notDeepEqual(all[0].spans, all[1].spans);
+  assert.deepEqual(parseRouteResponse(body), all[0]);
+});
+
+test('parseRoutesResponse throws on empty routes; a bad alternative is skipped, a bad routes[0] throws', () => {
+  assert.throws(() => parseRoutesResponse({ routes: [] }), HereSchemaError);
+  assert.throws(() => parseRoutesResponse({}), HereSchemaError);
+  const body = fixture('fixture-fastest.json');
+  body.routes[1].sections = [];
+  assert.equal(parseRoutesResponse(body).length, 1);
+  body.routes[0].sections = [];
+  assert.throws(() => parseRoutesResponse(body), HereSchemaError);
+});
+
 // --- fetchRoute -------------------------------------------------------------
 const params = { origin: A, destination: B, via: [41.757, -72.887], apiKey: KEY };
 
@@ -312,6 +384,30 @@ test('fetchRoute returns parsed route plus raw on 200', async () => {
   assert.equal(r.spans.length, 25);
   assert.equal(r.raw, body);
   assert.equal(r.etaSec, body.routes[0].sections[0].summary.duration);
+});
+
+test('fetchRoutes returns an array of all routes, each with raw', async () => {
+  const body = fixture('fixture-fastest.json');
+  let seenUrl;
+  const fakeFetch = async (url) => {
+    seenUrl = url;
+    return { ok: true, status: 200, json: async () => body };
+  };
+  const p = { origin: A, destination: B, vias: [[41.1, -72.1], [41.2, -72.2]], alternatives: 1, apiKey: KEY };
+  const rs = await fetchRoutes(p, { fetch: fakeFetch });
+  assert.equal(seenUrl, buildRouteUrl(p));
+  assert.ok(Array.isArray(rs));
+  assert.equal(rs.length, 2);
+  assert.ok(rs.every((r) => r.raw === body));
+  assert.equal(rs[1].etaSec, body.routes[1].sections[0].summary.duration);
+  const one = await fetchRoute(p, { fetch: fakeFetch });
+  assert.equal(one.etaSec, rs[0].etaSec);
+  assert.ok(!Array.isArray(one));
+});
+
+test('fetchRoutes rejects with HereApiError on non-2xx', async () => {
+  const fakeFetch = async () => ({ ok: false, status: 401, text: async () => '{"title":"Unauthorized"}' });
+  await assert.rejects(fetchRoutes(params, { fetch: fakeFetch }), (e) => e instanceof HereApiError && e.status === 401);
 });
 
 test('fetchRoute throws HereApiError with status/title/cause on 401', async () => {

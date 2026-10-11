@@ -10,19 +10,57 @@ const SETTINGS_KEY = 'main';
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const clone = (v) => (typeof structuredClone === 'function' ? structuredClone(v) : JSON.parse(JSON.stringify(v)));
 
-/**
- * Deep-merge stored values over defaults. Plain objects merge recursively;
- * arrays (e.g. corridors) and scalars from `stored` replace the default wholesale.
- * Pure; does not mutate inputs.
- */
-export function mergeSettings(defaults, stored) {
+function deepMerge(defaults, stored) {
   if (!isPlainObject(defaults)) return stored === undefined ? clone(defaults) : clone(stored);
   const out = clone(defaults);
   if (!isPlainObject(stored)) return out;
   for (const [k, sv] of Object.entries(stored)) {
     if (sv === undefined) continue;
-    if (isPlainObject(sv) && isPlainObject(out[k])) out[k] = mergeSettings(out[k], sv);
+    if (isPlainObject(sv) && isPlainObject(out[k])) out[k] = deepMerge(out[k], sv);
     else out[k] = clone(sv);
+  }
+  return out;
+}
+
+/**
+ * Upgrade a stored corridor to the v0.2 schema (in place on an already-cloned object):
+ * legacy `via` -> `vias: [via]`, legacy `viaReturn` -> `viasReturn: [viaReturn]`, legacy keys
+ * deleted; missing `vias` -> [], missing `avoidHighways` -> false. Already-new corridors are
+ * left as they are (no `viasReturn` is invented).
+ */
+function migrateCorridor(c) {
+  if (!isPlainObject(c)) return c;
+  if (!Array.isArray(c.vias)) c.vias = isPlainObject(c.via) ? [c.via] : [];
+  if ('viaReturn' in c && !Array.isArray(c.viasReturn) && isPlainObject(c.viaReturn)) {
+    c.viasReturn = [c.viaReturn];
+  }
+  delete c.via;
+  delete c.viaReturn;
+  c.avoidHighways = Boolean(c.avoidHighways);
+  return c;
+}
+
+function clampAlternatives(v, fallback) {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(3, Math.max(0, Math.round(n)));
+}
+
+/**
+ * Deep-merge stored values over defaults. Plain objects merge recursively;
+ * arrays (e.g. corridors) and scalars from `stored` replace the default wholesale.
+ * Then normalises: legacy corridor `via`/`viaReturn` migrate to `vias`/`viasReturn`
+ * (see migrateCorridor) and `alternatives` becomes an integer 0..3 (default if unusable).
+ * Pure; does not mutate inputs.
+ */
+export function mergeSettings(defaults, stored) {
+  const out = deepMerge(defaults, stored);
+  if (isPlainObject(out)) {
+    if (Array.isArray(out.corridors)) out.corridors.forEach(migrateCorridor);
+    if ('alternatives' in out || (isPlainObject(defaults) && 'alternatives' in defaults)) {
+      const fallback = isPlainObject(defaults) ? clampAlternatives(defaults.alternatives, 1) : 1;
+      out.alternatives = clampAlternatives(out.alternatives, fallback);
+    }
   }
   return out;
 }

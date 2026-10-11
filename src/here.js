@@ -44,21 +44,27 @@ function latLng(point, label) {
 
 /**
  * Build the HERE v8 /routes request URL. Points may be [lat,lng] or {lat,lng}.
- * `via` is omitted when null/undefined; `departureTime` is omitted when undefined.
- * The apikey is always the last query parameter.
+ * `vias` (array) yields one pass-through `via` param per point, in order; legacy single
+ * `via` is treated as `[via]` (ignored when `vias` is an array). `avoidHighways` adds
+ * avoid[features]=controlledAccessHighway; `alternatives` (>= 1) adds alternatives=N.
+ * `departureTime` is omitted when undefined. The apikey is always the last query parameter.
  */
-export function buildRouteUrl({ origin, destination, via, departureTime, apiKey }) {
+export function buildRouteUrl({ origin, destination, via, vias, departureTime, apiKey, avoidHighways, alternatives }) {
   const parts = [
     'transportMode=car',
     `origin=${latLng(origin, 'origin')}`,
     `destination=${latLng(destination, 'destination')}`,
   ];
-  if (via != null) parts.push(`via=${latLng(via, 'via')}!passThrough=true`);
+  const viaPts = Array.isArray(vias) ? vias : via != null ? [via] : [];
+  viaPts.forEach((v, i) => parts.push(`via=${latLng(v, `vias[${i}]`)}!passThrough=true`));
   if (departureTime !== undefined && departureTime !== null) {
     parts.push(`departureTime=${encodeURIComponent(departureTime)}`);
   }
   parts.push('return=polyline,summary');
   parts.push('spans=maxSpeed,dynamicSpeedInfo,length,duration');
+  if (avoidHighways) parts.push('avoid%5Bfeatures%5D=controlledAccessHighway');
+  const alts = Math.floor(Number(alternatives));
+  if (Number.isFinite(alts) && alts >= 1) parts.push(`alternatives=${alts}`);
   parts.push(`apikey=${encodeURIComponent(apiKey ?? '')}`);
   return `${ROUTES_ENDPOINT}?${parts.join('&')}`;
 }
@@ -135,16 +141,30 @@ export function decodeFlexiblePolyline(str) {
 const isNum = (x) => typeof x === 'number' && Number.isFinite(x);
 
 /**
- * Parse a HERE v8 /routes JSON body. Uses routes[0], concatenating all sections.
- * @returns {{ spans: Array, polyline: Array<[number,number]>, etaSec: number, lengthM: number }}
+ * Parse every route of a HERE v8 /routes JSON body (sections of each are concatenated).
+ * @returns {Array<{ spans: Array, polyline: Array<[number,number]>, etaSec: number, lengthM: number }>}
  */
-export function parseRouteResponse(json) {
+export function parseRoutesResponse(json) {
   if (!json || typeof json !== 'object') throw new HereSchemaError('Response is not a JSON object');
   const routes = json.routes;
   if (!Array.isArray(routes) || routes.length === 0) throw new HereSchemaError('Response has no routes');
-  const sections = routes[0] && routes[0].sections;
+  // routes[0] must parse; a malformed alternative is skipped rather than discarding the whole response.
+  const out = [parseOneRoute(routes[0], 0)];
+  for (let ri = 1; ri < routes.length; ri++) {
+    try { out.push(parseOneRoute(routes[ri], ri)); } catch (e) { if (!(e instanceof HereSchemaError)) throw e; }
+  }
+  return out;
+}
+
+/** Parse the first route of a HERE v8 /routes JSON body (= parseRoutesResponse(json)[0]). */
+export function parseRouteResponse(json) {
+  return parseRoutesResponse(json)[0];
+}
+
+function parseOneRoute(route, ri) {
+  const sections = route && route.sections;
   if (!Array.isArray(sections) || sections.length === 0) {
-    throw new HereSchemaError('Route has no sections');
+    throw new HereSchemaError(ri === 0 ? 'Route has no sections' : `Route ${ri} has no sections`);
   }
 
   const spans = [];
@@ -153,7 +173,7 @@ export function parseRouteResponse(json) {
   let lengthM = 0;
 
   sections.forEach((sec, si) => {
-    const where = `section ${si}`;
+    const where = ri === 0 ? `section ${si}` : `route ${ri} section ${si}`;
     if (!sec || typeof sec !== 'object') throw new HereSchemaError(`${where} is not an object`);
     if (typeof sec.polyline !== 'string' || sec.polyline === '') {
       throw new HereSchemaError(`${where} lacks a polyline`);
@@ -317,14 +337,14 @@ export function polylineOverlap(a, b, toleranceM = 30) {
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch and parse one route.
+ * Fetch and parse all routes (primary + alternatives) from one request.
  * @param {Parameters<typeof buildRouteUrl>[0]} params
  * @param {{fetch?: typeof fetch, signal?: AbortSignal}} [opts]
- * @returns {Promise<ReturnType<typeof parseRouteResponse> & {raw: any}>}
+ * @returns {Promise<Array<ReturnType<typeof parseRouteResponse> & {raw: any}>>}
  */
-export async function fetchRoute(params, opts = {}) {
+export async function fetchRoutes(params, opts = {}) {
   const doFetch = opts.fetch ?? globalThis.fetch;
-  if (typeof doFetch !== 'function') throw new TypeError('fetchRoute: no fetch implementation available');
+  if (typeof doFetch !== 'function') throw new TypeError('fetchRoutes: no fetch implementation available');
   const url = buildRouteUrl(params);
   const res = await doFetch(url, opts.signal ? { signal: opts.signal } : undefined);
 
@@ -364,5 +384,13 @@ export async function fetchRoute(params, opts = {}) {
   } catch (e) {
     throw new HereSchemaError(`Response was not valid JSON: ${e.message}`);
   }
-  return { ...parseRouteResponse(raw), raw };
+  return parseRoutesResponse(raw).map((r) => ({ ...r, raw }));
+}
+
+/**
+ * Fetch and parse one route (the first of fetchRoutes).
+ * @returns {Promise<ReturnType<typeof parseRouteResponse> & {raw: any}>}
+ */
+export async function fetchRoute(params, opts = {}) {
+  return (await fetchRoutes(params, opts))[0];
 }

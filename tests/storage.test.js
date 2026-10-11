@@ -5,7 +5,8 @@ import { DEFAULT_SETTINGS, FASTEST_ID } from '../src/defaults.js';
 
 test('importing storage.js in Node does not throw; defaults exported', () => {
   assert.equal(FASTEST_ID, 'fastest');
-  assert.equal(DEFAULT_SETTINGS.corridors.length, 3);
+  assert.equal(DEFAULT_SETTINGS.corridors.length, 4);
+  assert.equal(DEFAULT_SETTINGS.alternatives, 1);
 });
 
 test('mergeSettings returns defaults (cloned) when nothing stored', () => {
@@ -25,19 +26,58 @@ test('mergeSettings deep-merges nested objects', () => {
 });
 
 test('mergeSettings replaces corridors array wholesale', () => {
-  const stored = [{ id: 'x', name: 'X', enabled: true, via: { lat: 1, lng: 2 } }];
+  const stored = [{ id: 'x', name: 'X', enabled: true, vias: [{ lat: 1, lng: 2 }], avoidHighways: false }];
   const m = mergeSettings(DEFAULT_SETTINGS, { corridors: stored });
   assert.deepEqual(m.corridors, stored);
   const empty = mergeSettings(DEFAULT_SETTINGS, { corridors: [] });
   assert.deepEqual(empty.corridors, []);
 });
 
-test('mergeSettings preserves a stored corridor with viaReturn', () => {
-  const stored = [{ id: 'r', name: 'R', enabled: true, via: { lat: 1, lng: 2 }, viaReturn: { lat: 3, lng: 4 } }];
+test('mergeSettings preserves a stored corridor with viasReturn', () => {
+  const stored = [{ id: 'r', name: 'R', enabled: true, vias: [{ lat: 1, lng: 2 }], viasReturn: [{ lat: 3, lng: 4 }], avoidHighways: false }];
   const m = mergeSettings(DEFAULT_SETTINGS, { corridors: stored });
   assert.deepEqual(m.corridors, stored);
-  assert.deepEqual(m.corridors[0].viaReturn, { lat: 3, lng: 4 });
-  assert.deepEqual(DEFAULT_SETTINGS.corridors.find((c) => c.id === 'rt8').viaReturn, { lat: 41.5382, lng: -73.004 });
+  assert.deepEqual(m.corridors[0].viasReturn, [{ lat: 3, lng: 4 }]);
+  assert.deepEqual(DEFAULT_SETTINGS.corridors.find((c) => c.id === 'rt8').viasReturn, [{ lat: 41.5382, lng: -73.004 }]);
+});
+
+test('mergeSettings migrates a legacy via/viaReturn corridor to vias/viasReturn', () => {
+  const legacy = { id: 'r', name: 'R', enabled: true, via: { lat: 1, lng: 2 }, viaReturn: { lat: 3, lng: 4 }, note: 'n' };
+  const input = { corridors: [legacy, { id: 'p', name: 'P', enabled: false, via: { lat: 5, lng: 6 } }, { id: 'q', name: 'Q', enabled: true }] };
+  const snapshot = JSON.parse(JSON.stringify(input));
+  const m = mergeSettings(DEFAULT_SETTINGS, input);
+  assert.deepEqual(m.corridors[0], {
+    id: 'r', name: 'R', enabled: true, note: 'n',
+    vias: [{ lat: 1, lng: 2 }], viasReturn: [{ lat: 3, lng: 4 }], avoidHighways: false,
+  });
+  assert.ok(!('via' in m.corridors[0]) && !('viaReturn' in m.corridors[0]));
+  assert.deepEqual(m.corridors[1], { id: 'p', name: 'P', enabled: false, vias: [{ lat: 5, lng: 6 }], avoidHighways: false });
+  assert.ok(!('viasReturn' in m.corridors[1]));
+  assert.deepEqual(m.corridors[2].vias, []);
+  assert.equal(m.corridors[2].avoidHighways, false);
+  assert.deepEqual(input, snapshot, 'input not mutated');
+});
+
+test('mergeSettings passes an already-new corridor through untouched', () => {
+  const c = { id: 'n', name: 'N', enabled: true, vias: [{ lat: 1, lng: 2 }, { lat: 3, lng: 4 }], viasReturn: [{ lat: 5, lng: 6 }], avoidHighways: true, note: '' };
+  const m = mergeSettings(DEFAULT_SETTINGS, { corridors: [c] });
+  assert.deepEqual(m.corridors, [c]);
+  const noHwy = { id: 'h', name: 'H', enabled: true, vias: [], avoidHighways: true };
+  assert.deepEqual(mergeSettings(DEFAULT_SETTINGS, { corridors: [noHwy] }).corridors, [noHwy]);
+});
+
+test('mergeSettings alternatives: default, passthrough, rounding and clamp 0..3', () => {
+  assert.equal(mergeSettings(DEFAULT_SETTINGS, undefined).alternatives, 1);
+  assert.equal(mergeSettings(DEFAULT_SETTINGS, { apiKey: 'k' }).alternatives, 1);
+  assert.equal(mergeSettings(DEFAULT_SETTINGS, { alternatives: 0 }).alternatives, 0);
+  assert.equal(mergeSettings(DEFAULT_SETTINGS, { alternatives: 3 }).alternatives, 3);
+  assert.equal(mergeSettings(DEFAULT_SETTINGS, { alternatives: 7 }).alternatives, 3);
+  assert.equal(mergeSettings(DEFAULT_SETTINGS, { alternatives: -2 }).alternatives, 0);
+  assert.equal(mergeSettings(DEFAULT_SETTINGS, { alternatives: 1.6 }).alternatives, 2);
+  assert.equal(mergeSettings(DEFAULT_SETTINGS, { alternatives: '2' }).alternatives, 2);
+  for (const bad of ['abc', null, NaN, {}, '']) {
+    assert.equal(mergeSettings(DEFAULT_SETTINGS, { alternatives: bad }).alternatives, 1);
+  }
 });
 
 test('mergeSettings keeps unknown stored keys and ignores undefined', () => {
