@@ -200,3 +200,56 @@ Single-page, three views toggled by hash: `#/` ranking, `#/settings`, `#/history
 ## `sw.js`, `manifest.webmanifest`
 App-shell cache (index.html, styles.css, src/*.js, icons). Network-only for `router.hereapi.com`.
 Shell HTML and `src/*.js` are network-first with cache fallback; css, icons, manifest, fixtures are cache-first with background revalidate. Cache name includes a version string; old caches deleted on activate.
+
+---
+
+# v0.2 additions: multi-via corridors, avoid-highways, alternatives
+
+## Corridor schema (defaults.js, storage.js)
+
+```js
+// A corridor is now:
+{
+  id: 'rt4', name: 'Rt 4', enabled: true, note: '',
+  vias: [ {lat, lng}, ... ],          // 0..N pass-through points, in order, used for toWork
+  viasReturn: [ {lat, lng}, ... ],    // optional; if present and non-empty, used for toHome INSTEAD of vias
+                                      // (NOT reversed automatically; user enters them in travel order for the home trip)
+  avoidHighways: false,               // true → request avoid[features]=controlledAccessHighway
+}
+```
+- **Migration** in `mergeSettings`: a stored corridor with legacy `via: {lat,lng}` becomes `vias: [via]`; legacy `viaReturn` becomes `viasReturn: [viaReturn]`; delete the legacy keys. Missing `vias` → `[]`. Missing `avoidHighways` → `false`.
+- When `viasReturn` is absent/empty and direction is toHome, use `vias` **reversed** (correct for undivided roads; divided-highway corridors should set `viasReturn`).
+- New setting `alternatives: 1` (integer 0..3). Sent as `alternatives=N` on every request when N > 0. Default 1.
+- New default corridors appended to DEFAULT_SETTINGS.corridors:
+  `{ id: 'nohwy', name: 'No highways', enabled: true, vias: [], avoidHighways: true, note: 'HERE fastest route avoiding controlled-access highways' }`
+  The existing three corridors become `vias: [pt]` form; Rt 8 keeps its return point as `viasReturn: [pt]`.
+- `FASTEST_ID` candidate unchanged (no vias, no avoid).
+
+## here.js
+
+```js
+buildRouteUrl({ origin, destination, via, vias, departureTime, apiKey, avoidHighways, alternatives })
+```
+- `vias`: array of points → one `via=lat,lng!passThrough=true` param per point, in order. `via` (single) still accepted for back-compat and equals `vias: [via]`.
+- `avoidHighways: true` → append `avoid[features]=controlledAccessHighway` (URL-encode the brackets as `avoid%5Bfeatures%5D`; HERE accepts both).
+- `alternatives: N` (N ≥ 1) → append `alternatives=N`. Omit when 0/undefined.
+- `apikey` stays last.
+
+```js
+export function parseRoutesResponse(json) -> Array<{ spans, polyline, etaSec, lengthM }>   // one per routes[i]
+export function parseRouteResponse(json)   // unchanged: = parseRoutesResponse(json)[0]
+export async function fetchRoutes(params, opts) -> Array<parsed> + each has `raw` reference  // all routes
+export async function fetchRoute(params, opts)   // unchanged: first of fetchRoutes
+```
+HereSchemaError if `routes` is empty.
+
+## maps.js
+`googleMapsUrl({origin, destination, via, vias})` and `appleMapsUrl(...)`: accept `vias` array (or single `via`). Google: `waypoints=lat,lng|lat,lng` (pipe-separated, URL-encoded `%7C`). Apple: chain `daddr=v1+to:v2+to:dest`. Neither Google nor Apple has an avoid-highways URL flag; Google accepts `avoid=highways` only in the deprecated `/maps?` form, so for `avoidHighways` corridors append `&avoid=highways` to the Google URL anyway (harmless if ignored) and note it in the card.
+
+## app.js / ui.js
+- Candidates: for each enabled corridor, one request with its vias for the current direction and its `avoidHighways`; plus the FASTEST_ID request. All with `alternatives: settings.alternatives`.
+- Each returned route i (0-based) becomes a `RouteResult`: `corridorId = i === 0 ? c.id : \`${c.id}~alt${i}\``, `name = i === 0 ? c.name : \`${c.name} (alt ${i})\``, `isFastest` only for FASTEST_ID route 0. Add `avoidHighways` and `vias` (the ones used) to the RouteResult so the card can build the Maps URL and show a chip "No highways".
+- History records keep `corridorId` as above (alt routes are logged under their alt id).
+- Settings UI per corridor: a list of via rows (lat, lng, remove) + "Add via"; a collapsible "Return trip vias (optional, for divided highways)" list with the same controls; an "Avoid highways" checkbox. Global "Alternatives per request (0–3)" number field.
+- Validation: every via/return via must be finite and in range; an empty vias list is allowed (pure avoid-highways or pure fastest corridor).
+- Card chip "No highways" when `avoidHighways`. Hidden section and dedupe unchanged.
